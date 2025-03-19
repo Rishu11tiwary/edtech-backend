@@ -1,6 +1,7 @@
 const Profile = require("../models/Profile");
 const User = require("../models/User");
 const { uploadImageToCloudinary } = require("../utils/imageUploader");
+const redisClient = require("../config/redisClient");
 
 // update profile
 exports.updateProfile = async (req, res) => {
@@ -46,6 +47,8 @@ exports.updateProfile = async (req, res) => {
     profileDetails.about = about;
     profileDetails.contactNumber = contactNumber;
     await profileDetails.save();
+
+    await redisClient.del(`user:${userId}`);
 
     // ret res
     return res.status(200).json({
@@ -124,6 +127,16 @@ exports.getUserDetail = async (req, res) => {
     const userId = req.user.userId;
 
     // validate and get from db
+    const cacheKey = `user:${userId}`;
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      return res.status(200).json({
+        success: true,
+        message: "User details fetched from cache",
+        user: JSON.parse(cachedData),
+      });
+    }
+
     const userDetails = await User.findById(userId)
       .populate("additionalDetails")
       .populate("courses")
@@ -134,6 +147,8 @@ exports.getUserDetail = async (req, res) => {
         message: "User not found",
       });
     }
+
+    await redisClient.setex(cacheKey, 1800, JSON.stringify(userDetails));
 
     // ret res
     return res.status(200).json({
@@ -174,17 +189,20 @@ exports.getAllUserDetails = async (req, res) => {
 exports.getEnrolledCourses = async (req, res) => {
   try {
     const userId = req.user.id;
+
     const userDetails = await User.findOne({
       _id: userId,
     })
       .populate("courses")
       .exec();
+
     if (!userDetails) {
       return res.status(400).json({
         success: false,
         message: `Could not find user with id: ${userDetails}`,
       });
     }
+
     return res.status(200).json({
       success: true,
       data: userDetails.courses,

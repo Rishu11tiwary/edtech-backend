@@ -2,7 +2,6 @@ const { instance } = require("../config/razorpay");
 const User = require("../models/User");
 const Course = require("../models/Course");
 const mongoose = require("mongoose");
-const kafka = require("../config/kafka");
 const redis = require("../config/redisClient");
 
 // capture the payment and instantiate Razorpay order creation

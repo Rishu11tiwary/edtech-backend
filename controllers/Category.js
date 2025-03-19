@@ -1,4 +1,5 @@
 const Category = require("../models/Category");
+const redisClient = require("../config/redisClient");
 
 exports.createCategory = async (req, res) => {
   try {
@@ -19,6 +20,8 @@ exports.createCategory = async (req, res) => {
       description: description,
     });
 
+    await redisClient.del("allCategories");
+
     //ret res
     return res.status(201).json({
       success: true,
@@ -38,14 +41,29 @@ exports.createCategory = async (req, res) => {
 exports.showAllCategories = async (req, res) => {
   try {
     // fetch data
+    const cachedCategories = await redisClient.get("allCategories");
+    if (cachedCategories) {
+      return res.status(200).json({
+        success: true,
+        message: "Categories retrieved successfully (from cache).",
+        data: JSON.parse(cachedCategories),
+      });
+    }
+
     const allCategories = await Category.find({}, { name: 1, description: 1 });
 
     if (allCategories.length === 0) {
-    	return res.status(404).json({
-    		success: false,
-    		message: "No categories found.",
-    	});
+      return res.status(404).json({
+        success: false,
+        message: "No categories found.",
+      });
     }
+
+    await redisClient.setex(
+      "allCategories",
+      1800,
+      JSON.stringify(allCategories)
+    );
 
     // ret res
     return res.status(200).json({
@@ -76,6 +94,15 @@ exports.categoryPageDetails = async (req, res) => {
     }
 
     // fetch db
+    const cachedCategory = await redisClient.get(`category:${categoryId}`);
+    if (cachedCategory) {
+      return res.status(200).json({
+        success: true,
+        message: "Category page details retrieved successfully (from cache).",
+        ...JSON.parse(cachedCategory),
+      });
+    }
+
     const selectedCategory = await Category.findById(categoryId)
       .populate("courses")
       .exec();
@@ -112,6 +139,8 @@ exports.categoryPageDetails = async (req, res) => {
     const mostSellingCourses = allCourses
       .sort((a, b) => b.sold - a.sold)
       .slice(0, 10);
+
+    await redisClient.setex(`category:${categoryId}`, 1800, JSON.stringify(responseData));
 
     return res.status(200).json({
       success: true,
